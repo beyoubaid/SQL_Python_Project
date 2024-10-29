@@ -58,7 +58,72 @@ WITH SellerRevenue AS (
 SELECT seller_id, revenue, DENSE_RANK() OVER (ORDER BY revenue DESC) AS ranks
 FROM SellerRevenue;
 
+-- ADVANCE QUESTIONS--
 
+#1 Calculate the moving average of order values for each customer over their order history.
+SELECT customer_id, order_purchase_timestamp, payment, AVG(payment)
+OVER(partition by customer_id ORDER BY order_purchase_timestamp 
+ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS move_avg 
+FROM(
+SELECT orders.customer_id, orders.order_purchase_timestamp, payments.payment_value AS payment
+FROM orders JOIN payments ON orders.order_id = payments.order_id
+) AS a
+
+
+#2 Calculate the cumulative sales per month for each year.
+SELECT years, months, payment, SUM(payment)
+OVER(ORDER BY years, months) AS cumulative_sales FROM
+(SELECT YEAR(orders.order_purchase_timestamp) AS years,
+MONTH(orders.order_purchase_timestamp) AS months,
+ROUND(SUM(payments.payment_value),2) AS payment
+FROM orders JOIN payments ON orders.order_id = payments.order_id
+GROUP BY years, months ORDER BY years, months) AS a
+
+#3 Calculate the year-over-year growth rate of total sales.
+)
+SELECT 
+years, ((payment - LAG(payment, 1) OVER(ORDER BY years))/
+LAG(payment, 1) OVER(ORDER BY years)) * 100 AS yoy_growth
+FROM a;
+
+WITH a AS(SELECT YEAR(orders.order_purchase_timestamp) AS years,
+ROUND(SUM(payments.payment_value),2) AS payment
+FROM orders JOIN payments ON orders.order_id = payments.order_id
+GROUP BY years ORDER BY years)
+
+SELECT years, ((payment - LAG(payment, 1) OVER(ORDER BY years))/
+LAG(payment, 1) OVER(ORDER BY years)) * 100   FROM a;
+
+#4 Calculate the retention rate of customers, defined as the percentage of customers who make another purchase within 6 months of their first purchase
+
+with a as (select customers.customer_id,
+min(orders.order_purchase_timestamp) first_order
+from customers join orders
+on customers.customer_id = orders.customer_id
+group by customers.customer_id),
+
+b as (select a.customer_id, count(distinct orders.order_purchase_timestamp) next_order
+from a join orders
+on orders.customer_id = a.customer_id
+and orders.order_purchase_timestamp > first_order
+and orders.order_purchase_timestamp < 
+date_add(first_order, interval 6 month)
+group by a.customer_id) 
+
+select 100 * (count( distinct a.customer_id)/ count(distinct b.customer_id)) 
+from a left join b 
+on a.customer_id = b.customer_id;
+
+#5  Identify the top 3 customers who spent the most money in each year.
+WITH a AS
+(SELECT YEAR(orders.order_purchase_timestamp) AS years,
+orders.order_id, orders.customer_id, SUM(payments.payment_value) AS payments,
+DENSE_RANK() OVER(PARTITION BY YEAR (orders.order_purchase_timestamp) 
+ORDER BY SUM(payments.payment_value) DESC) AS d_rank 
+FROM payments JOIN orders ON payments.order_id = orders.order_id 
+GROUP BY YEAR(orders.order_purchase_timestamp), orders.order_id, orders.customer_id
+)
+SELECT years, order_id, customer_id, d_rank FROM a WHERE d_rank <= 3;
 
 
 
